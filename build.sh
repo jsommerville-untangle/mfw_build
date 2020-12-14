@@ -17,6 +17,8 @@ usage() {
   echo "  -u                        : 'upstream' build, with no MFW feeds"
   echo "  -c true|false             : start clean or not (default is false, meaning \"do not start clean\""
   echo "  -v release|<branch>|<tag> : version to build from (defaults to master)"
+  echo "  -o <package name>         : package name (or names) that should build with a version (git commit or branch) separate from -v flag"
+  echo "  -b <branch or commit hash>: the branch name or commit hash that the -o flag should be used with"
   echo "                              - 'release' is a special keyword meaning 'most recent tag from each"
   echo "                                package's source repository'"
   echo "                              - <branch> or <tag> can be any valid git object as long as it exists"
@@ -37,7 +39,7 @@ LIBC="musl"
 VERSION="master"
 MAKE_OPTIONS="-j32"
 NO_MFW_FEEDS=""
-while getopts "uhc:d:l:v:m:" opt ; do
+while getopts "uhc:d:l:v:m:o:b:" opt ; do
   case "$opt" in
     c) START_CLEAN="$OPTARG" ;;
     d) DEVICE="$OPTARG" ;;
@@ -45,6 +47,8 @@ while getopts "uhc:d:l:v:m:" opt ; do
     v) VERSION="$OPTARG" ;;
     m) MAKE_OPTIONS="$OPTARG" ;;
     u) NO_MFW_FEEDS=1 ;;
+    o) OTHER_VERSION_PKG_NAME="$OPTARG" ;;
+    b) OTHER_VERSION_BRANCH="$OPTARG" ;;
     h) usage ; exit 0 ;;
   esac
 done
@@ -66,6 +70,11 @@ if [[ $VERSION == "release" ]] ; then
 else
   VERSION_ASSIGN="MFW_VERSION=${VERSION}"
   export MFW_VERSION="${VERSION}"
+fi
+
+if [ -n "${OTHER_VERSION_PKG_NAME}" ] && [ -n "${OTHER_VERSION_BRANCH}" ]; then
+  OTHER_VERSION_PKG_NAME="MFW_OTHER_PKG_NAMES=${OTHER_VERSION_PKG_NAME}"
+  OTHER_VERSION_BRANCH="MFW_OTHER_PKG_BRANCH=${OTHER_VERSION_BRANCH}"
 fi
 
 # start clean only if explicitely requested
@@ -92,9 +101,9 @@ if [ -z "$NO_MFW_FEEDS" ]; then
 
   # install feeds
   rm -fr {.,package}/feeds/mfw*
-  ./scripts/feeds update -a
-  ./scripts/feeds install -a -p packages
-  ./scripts/feeds install -a -f -p mfw
+  ./scripts/feeds update -a "${OTHER_VERSION_PKG_NAME}" "${OTHER_VERSION_BRANCH}"
+  ./scripts/feeds install -a -p packages "${OTHER_VERSION_PKG_NAME}" "${OTHER_VERSION_BRANCH}"
+  ./scripts/feeds install -a -f -p mfw "${OTHER_VERSION_PKG_NAME}" "${OTHER_VERSION_BRANCH}"
 
   # create config file for MFW
   ./feeds/mfw/configs/generate.sh -d $DEVICE -l $LIBC >| .config
@@ -136,11 +145,11 @@ else
 fi
 
 # download
-make $MAKE_OPTIONS $VERSION_ASSIGN download
+make $MAKE_OPTIONS $VERSION_ASSIGN "${OTHER_VERSION_PKG_NAME}" "${OTHER_VERSION_BRANCH}" download
 
 # build
 if ! make $MAKE_OPTIONS $VERSION_ASSIGN ; then
-  make -j1 V=s $VERSION_ASSIGN
+  make -j1 V=s $VERSION_ASSIGN "${OTHER_VERSION_PKG_NAME}" "${OTHER_VERSION_BRANCH}"
 fi
 
 cleanup
